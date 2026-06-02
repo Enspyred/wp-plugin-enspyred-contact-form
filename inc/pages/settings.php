@@ -27,7 +27,7 @@ function ecf_admin_settings_page($stab = 'mail') {
                     <label for="mail_driver">Mail Driver</label>
                 </th>
                 <td>
-                    <select id="mail_driver" name="mail_driver">
+                    <select id="mail_driver" name="mail_driver" onchange="ecfSwitchDriver(this.value)">
                         <option value="sendgrid" <?php selected($global_settings['mail_driver'] ?? 'sendgrid', 'sendgrid'); ?>>
                             Sendgrid
                         </option>
@@ -39,6 +39,13 @@ function ecf_admin_settings_page($stab = 'mail') {
                         </option>
                     </select>
                     <p class="description">Configure credentials for each driver below. Switch drivers freely without losing saved credentials.</p>
+                    <script>
+                    function ecfSwitchDriver(driver) {
+                        ['sendgrid', 'mailpit', 'custom_smtp'].forEach(function(d) {
+                            document.getElementById('ecf-driver-config-' + d).style.display = d === driver ? 'block' : 'none';
+                        });
+                    }
+                    </script>
                 </td>
             </tr>
         </table>
@@ -54,10 +61,12 @@ function ecf_admin_settings_page($stab = 'mail') {
             'mailpit'     => ['host' => 'host.docker.internal',     'port' => '1025', 'user' => '',        'pass' => ''],
             'custom_smtp' => ['host' => 'smtp.example.com',         'port' => '587',  'user' => '',        'pass' => ''],
         ];
+        $active_driver = $global_settings['mail_driver'] ?? 'sendgrid';
         foreach ($drivers as $driver_key => $driver_label):
             $cfg = $global_settings['driver_configs'][$driver_key] ?? [];
             $ph  = $driver_placeholders[$driver_key];
         ?>
+        <div id="ecf-driver-config-<?php echo esc_attr($driver_key); ?>" style="display: <?php echo $driver_key === $active_driver ? 'block' : 'none'; ?>;">
         <h3><?php echo esc_html($driver_label); ?> Configuration</h3>
         <table class="form-table">
             <tr>
@@ -111,6 +120,7 @@ function ecf_admin_settings_page($stab = 'mail') {
                 </td>
             </tr>
         </table>
+        </div>
         <?php endforeach; ?>
 
         <h2>Admin Email BCC</h2>

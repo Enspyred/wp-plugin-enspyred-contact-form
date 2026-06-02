@@ -2,51 +2,42 @@
 class ValidationException extends Exception {}
 
 /*---------------------------
-| Configure SMTP so that we can leverage Wordpress wp_mail
-| whether it is mailtrap or sendgrid
+| Configure SMTP for wp_mail — handles Custom SMTP driver.
+| Mailgun API bypasses this entirely via email_send_mailgun().
 ---------------------------*/
 function configure_smtp($phpmailer) {
     enspyred_log("Running configure_smtp");
 
     $global_settings = get_option('ecf_global_settings', []);
-    $maildriver = $global_settings['mail_driver'] ?? 'mailtrap';
-    enspyred_log("MAIL_DRIVER is: " . $maildriver);
+    enspyred_log("MAIL_DRIVER is: " . ($global_settings['mail_driver'] ?? 'custom'));
 
     $phpmailer->isSMTP();
-    $phpmailer->SMTPAuth = true;
+    $phpmailer->SMTPAuth   = true;
     $phpmailer->SMTPSecure = 'tls';
 
-    if ($maildriver === 'custom') {
-        enspyred_log("Using Custom SMTP");
-        $phpmailer->Host = $global_settings['smtp_host'] ?? '';
-        $phpmailer->Port = intval($global_settings['smtp_port'] ?? 587);
-        $phpmailer->Username = $global_settings['smtp_username'] ?? '';
-        $phpmailer->Password = $global_settings['smtp_password'] ?? '';
+    $phpmailer->Host     = $global_settings['smtp_host'] ?? '';
+    $phpmailer->Port     = intval($global_settings['smtp_port'] ?? 587);
+    $phpmailer->Username = $global_settings['smtp_username'] ?? '';
+    $phpmailer->Password = $global_settings['smtp_password'] ?? '';
 
-        // Handle SSL/TLS settings
-        $security = $global_settings['smtp_security'] ?? 'tls';
-        if ($security === 'ssl') {
-            $phpmailer->SMTPSecure = 'ssl';
-            $phpmailer->Port = intval($global_settings['smtp_port'] ?? 465);
-        } elseif ($security === 'tls') {
-            $phpmailer->SMTPSecure = 'tls';
-        } else {
-            // No encryption
-            $phpmailer->SMTPSecure = '';
+    $security = $global_settings['smtp_security'] ?? 'tls';
+    if ($security === 'ssl') {
+        $phpmailer->SMTPSecure = 'ssl';
+        $phpmailer->Port = intval($global_settings['smtp_port'] ?? 465);
+    } elseif ($security === 'none') {
+        $phpmailer->SMTPSecure = '';
+        // Only skip auth when no credentials are set — Mailpit with MP_SMTP_AUTH_ACCEPT_ANY
+        // still requires the AUTH command to be sent (it just accepts any credentials).
+        if (empty($phpmailer->Username) || empty($phpmailer->Password)) {
             $phpmailer->SMTPAuth = false;
         }
-    } else { // Default to Mailtrap
-        enspyred_log("Using Mailtrap");
-        $phpmailer->Host = "sandbox.smtp.mailtrap.io";
-        $phpmailer->Port = 2525;
-        $phpmailer->Username = $global_settings['mailtrap_username'] ?? '';
-        $phpmailer->Password = $global_settings['mailtrap_password'] ?? '';
     }
 }
 add_action('phpmailer_init', function($phpmailer) {
     enspyred_log("📩 phpmailer_init hook (early) from functions.php");
     configure_smtp($phpmailer);
 });
+
 
 
 /*---------------------------
@@ -454,6 +445,16 @@ function email_process($request, $reqFields, $formConfig, $is_multipart = false)
 
         email_send($to, $subject, $message, $headers, $from_email, $from_name, $uploaded_files, $message_plain);
 
+        // Send confirmation email if enabled
+        if ($formConfig['confirmation_email_enabled'] ?? false) {
+            $sender = email_extract_sender($apiElements);
+            if (!empty($sender['email'])) {
+                email_send_confirmation_direct($sender['email'], $sender['name'], $formConfig);
+            } else {
+                enspyred_log("📧 Confirmation email skipped — no sender email found");
+            }
+        }
+
         // respond
         return new WP_REST_Response(['status' => 'success', 'message' => 'Your request has been sent, a representative will follow up with you shortly.'], 200);
     } catch (ValidationException $e) {
@@ -660,35 +661,53 @@ function email_get_headers($apiElements, $formConfig) {
         enspyred_log("📨 Bcc (combined): " . implode(', ', $bcc));
     }
 
-    // replyTo
-    $replyTo = email_get_headers_replyTo($apiElements);
-    if (!empty($replyTo)) {
-        $headers[] = $replyTo;
+    // replyTo — only if enabled (default true for backward compatibility)
+    if ($formConfig['reply_to_enabled'] ?? true) {
+        $replyTo = email_get_headers_replyTo($apiElements);
+        if (!empty($replyTo)) {
+            $headers[] = $replyTo;
+        }
     }
 
     return $headers;
 }
 
-function email_get_headers_replyTo($apiElements) {
-    enspyred_log("🚀 email_get_headers_replyTo");
-// Reply To
-    $name = "";
-    $email = "";
+/*---------------------------
+| Email: Extract Sender (name + email) from form elements
+| Checks common field IDs first, then falls back to the field
+| that carries the 'email' validation rule — so any field ID works.
+---------------------------*/
+function email_extract_sender($apiElements) {
+    $name  = '';
+    $email = '';
     email_loop_api_elelemnts($apiElements, function($group, $control) use (&$name, &$email) {
-        $id = $control['id'];
-        $value = $control['value'];
+        $id    = $control['id'];
+        $value = $control['value'] ?? '';
+        $rules = isset($control['rules']) ? (array) $control['rules'] : [];
 
-        if ($id === "username") {
+        // Name: match common IDs
+        if (empty($name) && ($id === 'username' || $id === 'name')) {
             $name = $value;
         }
 
-        if ($id === "userEmail") {
-            $email = $value;
+        // Email: match common IDs first, then fall back to any field with the email rule
+        if (empty($email)) {
+            if ($id === 'userEmail' || $id === 'email') {
+                $email = $value;
+            } elseif (in_array('email', $rules, true)) {
+                $email = $value;
+            }
         }
     });
+    enspyred_log("Sender — Name: $name | Email: $email");
+    return ['name' => $name, 'email' => $email];
+}
 
-    enspyred_log("Name: $name");
-    enspyred_log("Email: $email");
+function email_get_headers_replyTo($apiElements) {
+    enspyred_log("🚀 email_get_headers_replyTo");
+    $sender = email_extract_sender($apiElements);
+    $name   = $sender['name'];
+    $email  = $sender['email'];
 
     $replyTo = null;
     if (!empty($name) && !empty($email)) {
@@ -1157,4 +1176,48 @@ function email_send($to, $subject, $message, $headers, $from_email = '', $from_n
     }
 
     enspyred_log('✅ Email sent successfully!');
+}
+
+/*---------------------------
+| Email: Send Confirmation to Sender
+---------------------------*/
+function email_send_confirmation_direct($customer_email, $customer_name, $formConfig) {
+    enspyred_log("🚀 email_send_confirmation_direct");
+
+    $subject   = $formConfig['confirmation_email_subject'] ?? "We've Received Your Inquiry";
+    $body_text = $formConfig['confirmation_email_message'] ?? "Thank you for contacting us. Your message has been received and is currently being reviewed by our team.\n\nWe will follow up as soon as possible. If your request is urgent, please contact us directly by phone.\n\nThank you,\n\nThe Team";
+    $from_email = $formConfig['from'] ?? get_option('admin_email');
+    $from_name  = $formConfig['fromName'] ?? get_option('blogname');
+
+    // Build Reply-To from form recipients so customer replies land with the right people
+    $reply_to_addresses = [];
+    $recipients_string = $formConfig['recipients'] ?? '';
+    if (!empty($recipients_string)) {
+        $reply_to_addresses = array_merge($reply_to_addresses, array_map('trim', explode(',', $recipients_string)));
+    }
+    $cc_string = $formConfig['cc'] ?? '';
+    if (!empty($cc_string)) {
+        $reply_to_addresses = array_merge($reply_to_addresses, array_map('trim', explode(',', $cc_string)));
+    }
+    $reply_to_addresses = array_filter($reply_to_addresses);
+
+    $headers = ['Content-Type: text/html; charset=UTF-8'];
+    foreach ($reply_to_addresses as $addr) {
+        $headers[] = 'Reply-To: ' . $addr;
+    }
+    if (!empty($reply_to_addresses)) {
+        enspyred_log("📨 Confirmation Reply-To: " . implode(', ', $reply_to_addresses));
+    }
+
+    $greeting      = !empty($customer_name) ? 'Hello ' . esc_html($customer_name) . ',' : 'Hello,';
+    $message_html  = "<p>{$greeting}</p>" . wpautop(wp_kses_post($body_text));
+    $message_plain = $greeting . "\n\n" . strip_tags(str_replace(['<br />', '<br>', '</p>'], "\n", $body_text));
+
+    enspyred_log("📧 Sending confirmation to: {$customer_email}");
+
+    try {
+        email_send([$customer_email], $subject, $message_html, $headers, $from_email, $from_name, [], $message_plain);
+    } catch (Exception $e) {
+        enspyred_log("❌ Confirmation email failed: " . $e->getMessage());
+    }
 }

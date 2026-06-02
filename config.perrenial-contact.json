@@ -33,7 +33,7 @@
                     "type": "text",
                     "labelText": "Email Address",
                     "placeholder": "Email Address",
-                    "testValue": "john.doe@example.com",
+                    "testValue": "john.doe@enspyred.com",
                     "rules": [
                         "required",
                         "email"

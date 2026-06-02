@@ -26,6 +26,13 @@ function ecf_handle_edit_form_submission($form_id) {
         return;
     }
 
+    // Merge UI-controlled email option fields into config
+    $decoded_config['reply_to_enabled'] = !empty($_POST['reply_to_enabled']);
+    $decoded_config['confirmation_email_enabled'] = !empty($_POST['confirmation_email_enabled']);
+    $decoded_config['confirmation_email_subject'] = isset($_POST['confirmation_email_subject']) ? sanitize_text_field(wp_unslash($_POST['confirmation_email_subject'])) : '';
+    $decoded_config['confirmation_email_message'] = isset($_POST['confirmation_email_message']) ? wp_kses_post(wp_unslash($_POST['confirmation_email_message'])) : '';
+    $new_config = wp_json_encode($decoded_config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
     // Update form name and slug
     $old_name = $forms[$form_id]['name'];
     $forms[$form_id]['name'] = $new_name;
@@ -67,6 +74,13 @@ function ecf_admin_edit_form_page($form_id) {
     $config_raw = get_option('ecf_config_' . $form_id, '{}');
     // Prettify JSON for editing
     $config_json = json_encode(json_decode($config_raw, true), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+    // Extract email option values for UI checkboxes
+    $config_data = json_decode($config_raw, true) ?: [];
+    $reply_to_enabled = $config_data['reply_to_enabled'] ?? true;
+    $confirmation_email_enabled = $config_data['confirmation_email_enabled'] ?? false;
+    $confirmation_email_subject = $config_data['confirmation_email_subject'] ?? "We've Received Your Inquiry";
+    $confirmation_email_message = $config_data['confirmation_email_message'] ?? "Thank you for contacting us. Your message has been received and is currently being reviewed by our team.\n\nWe will follow up as soon as possible. If your request is urgent, please contact us directly by phone.\n\nThank you,\n\nThe Team";
 
     // Build parent config dropdown (exclude self and descendants, sort by name)
     $parent_id = isset($form['parent_id']) ? $form['parent_id'] : '';
@@ -166,6 +180,60 @@ function ecf_admin_edit_form_page($form_id) {
                     </td>
                 </tr>
                 <tr>
+                    <td colspan="2"><h2 style="margin: 20px 0 5px; padding-bottom: 8px; border-bottom: 1px solid #ccd0d4;">Email Options</h2></td>
+                </tr>
+                <tr>
+                    <th scope="row">Reply-To Header</th>
+                    <td>
+                        <input
+                            type="checkbox"
+                            id="reply_to_enabled"
+                            name="reply_to_enabled"
+                            value="1"
+                            <?php checked($reply_to_enabled); ?>
+                        />
+                        <label for="reply_to_enabled">Include sender in Reply-To header</label>
+                        <p class="description">When enabled, replies to notification emails go directly to the customer. Disable to prevent accidental replies — the sender's email still appears in the email body.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">Confirmation Email</th>
+                    <td>
+                        <input
+                            type="checkbox"
+                            id="confirmation_email_enabled"
+                            name="confirmation_email_enabled"
+                            value="1"
+                            <?php checked($confirmation_email_enabled); ?>
+                            onchange="toggleConfirmationFields()"
+                        />
+                        <label for="confirmation_email_enabled">Send confirmation email to sender</label>
+                        <p class="description">Sends an acknowledgment email to the person who submitted the form. Replies to that email will go to the form's configured recipients.</p>
+                        <div id="confirmation-email-fields" style="margin-top: 15px; padding: 15px; background: #f9f9f9; border-radius: 4px; display: <?php echo $confirmation_email_enabled ? 'block' : 'none'; ?>;">
+                            <p style="margin: 0 0 10px;"><strong>Subject</strong></p>
+                            <input
+                                type="text"
+                                id="confirmation_email_subject"
+                                name="confirmation_email_subject"
+                                value="<?php echo esc_attr($confirmation_email_subject); ?>"
+                                class="large-text"
+                                style="margin-bottom: 12px;"
+                            />
+                            <p style="margin: 0 0 10px;"><strong>Message</strong></p>
+                            <textarea
+                                id="confirmation_email_message"
+                                name="confirmation_email_message"
+                                rows="5"
+                                class="large-text"
+                            ><?php echo esc_textarea($confirmation_email_message); ?></textarea>
+                            <p class="description" style="margin-top: 5px;">This message is sent to the customer. Basic HTML is supported.</p>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2"><h2 style="margin: 20px 0 5px; padding-bottom: 8px; border-bottom: 1px solid #ccd0d4;">JSON Configuration</h2></td>
+                </tr>
+                <tr>
                     <th scope="row">
                         <label for="form_config">Form Configuration</label>
                     </th>
@@ -205,6 +273,11 @@ function ecf_admin_edit_form_page($form_id) {
         </div>
 
         <script>
+        function toggleConfirmationFields() {
+            const enabled = document.getElementById('confirmation_email_enabled').checked;
+            document.getElementById('confirmation-email-fields').style.display = enabled ? 'block' : 'none';
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             const textarea = document.getElementById('form_config');
             const formatBtn = document.getElementById('format-json');

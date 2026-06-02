@@ -2,7 +2,7 @@
 /*
 Plugin Name: Enspyred Contact Form
 Description: React + REST contact form with spam controls.
-Version: 1.2.1
+Version: 1.2.2
 Author: Enspyred
 Author URI: https://enspyred.com
 License: GPL v2 or later

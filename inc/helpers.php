@@ -4,7 +4,7 @@
  */
 if (!function_exists('enspyred_log')) {
     function enspyred_log($message) {
-        if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+        if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
             // Force logs directly to Docker stderr
             file_put_contents('php://stderr', '[ECF] ' . $message . PHP_EOL);
             // Also use error_log as backup

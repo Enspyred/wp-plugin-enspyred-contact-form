@@ -1,29 +1,28 @@
 <?php
 class ValidationException extends Exception {}
 
-/*---------------------------
-| Configure SMTP for wp_mail — handles Custom SMTP driver.
-| Mailgun API bypasses this entirely via email_send_mailgun().
----------------------------*/
 function configure_smtp($phpmailer) {
     enspyred_log("Running configure_smtp");
 
     $global_settings = get_option('ecf_global_settings', []);
-    enspyred_log("MAIL_DRIVER is: " . ($global_settings['mail_driver'] ?? 'custom'));
+    $mail_driver = $global_settings['mail_driver'] ?? 'sendgrid';
+    enspyred_log("MAIL_DRIVER is: " . $mail_driver);
+
+    $cfg = $global_settings['driver_configs'][$mail_driver] ?? [];
 
     $phpmailer->isSMTP();
     $phpmailer->SMTPAuth   = true;
     $phpmailer->SMTPSecure = 'tls';
 
-    $phpmailer->Host     = $global_settings['smtp_host'] ?? '';
-    $phpmailer->Port     = intval($global_settings['smtp_port'] ?? 587);
-    $phpmailer->Username = $global_settings['smtp_username'] ?? '';
-    $phpmailer->Password = $global_settings['smtp_password'] ?? '';
+    $phpmailer->Host     = $cfg['smtp_host'] ?? '';
+    $phpmailer->Port     = intval($cfg['smtp_port'] ?? 587);
+    $phpmailer->Username = $cfg['smtp_username'] ?? '';
+    $phpmailer->Password = $cfg['smtp_password'] ?? '';
 
-    $security = $global_settings['smtp_security'] ?? 'tls';
+    $security = $cfg['smtp_security'] ?? 'tls';
     if ($security === 'ssl') {
         $phpmailer->SMTPSecure = 'ssl';
-        $phpmailer->Port = intval($global_settings['smtp_port'] ?? 465);
+        $phpmailer->Port = intval($cfg['smtp_port'] ?? 465);
     } elseif ($security === 'none') {
         $phpmailer->SMTPSecure = '';
         // Only skip auth when no credentials are set — Mailpit with MP_SMTP_AUTH_ACCEPT_ANY
@@ -1109,16 +1108,9 @@ function email_send($to, $subject, $message, $headers, $from_email = '', $from_n
     enspyred_log("📄 Message Length: " . strlen($message));
     enspyred_log("📎 Attachments: " . count($attachments));
 
-    // Check if we should use Mailgun API
     $global_settings = get_option('ecf_global_settings', []);
-    $mail_driver = $global_settings['mail_driver'] ?? 'mailtrap';
 
-    if ($mail_driver === 'mailgun') {
-        enspyred_log("📧 Using Mailgun API for email delivery");
-        return email_send_mailgun($to, $subject, $message, $headers, $from_email, $from_name, $attachments, $message_plain);
-    }
-
-    // Use wp_mail for mailtrap and custom SMTP
+    // Use wp_mail for Sendgrid, Mailpit, and Custom SMTP
     enspyred_log("📧 Using wp_mail for email delivery");
 
     // Set up from email and name if provided

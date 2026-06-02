@@ -45,17 +45,18 @@ function ecf_seed_default_config() {
     }
 
     // Initialize global settings (add new fields if missing)
+    $default_driver_config = ['smtp_host' => '', 'smtp_port' => 587, 'smtp_username' => '', 'smtp_password' => '', 'smtp_security' => 'tls'];
     $default_global_settings = [
         'recaptcha_site_key' => '',
         'recaptcha_secret_key' => '',
         'recaptcha_score_threshold' => 0.5,
         'recaptcha_enabled' => false,
-        'mail_driver' => 'custom',
-        'smtp_host' => '',
-        'smtp_port' => 587,
-        'smtp_username' => '',
-        'smtp_password' => '',
-        'smtp_security' => 'tls',
+        'mail_driver' => 'sendgrid',
+        'driver_configs' => [
+            'sendgrid'    => $default_driver_config,
+            'mailpit'     => ['smtp_host' => 'host.docker.internal', 'smtp_port' => 1025, 'smtp_username' => '', 'smtp_password' => '', 'smtp_security' => 'none'],
+            'custom_smtp' => $default_driver_config,
+        ],
         'admin_emails' => '',
         'admin_emails_enabled' => false
     ];
@@ -70,6 +71,17 @@ function ecf_seed_default_config() {
                 $existing_settings[$key] = $val;
                 $changed = true;
             }
+        }
+        // Migrate flat smtp_* fields into driver_configs['sendgrid']
+        if (!empty($existing_settings['smtp_host']) && isset($existing_settings['driver_configs'])) {
+            $existing_settings['driver_configs']['sendgrid'] = [
+                'smtp_host'     => $existing_settings['smtp_host'],
+                'smtp_port'     => $existing_settings['smtp_port'] ?? 587,
+                'smtp_username' => $existing_settings['smtp_username'] ?? '',
+                'smtp_password' => $existing_settings['smtp_password'] ?? '',
+                'smtp_security' => $existing_settings['smtp_security'] ?? 'tls',
+            ];
+            $changed = true;
         }
         if ($changed) {
             update_option('ecf_global_settings', $existing_settings, false);

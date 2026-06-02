@@ -62,15 +62,19 @@ function ecf_handle_admin_form_submission() {
         case 'update_mail':
             $global_settings = get_option('ecf_global_settings', []);
 
-            $global_settings['mail_driver'] = isset($_POST['mail_driver']) ? sanitize_text_field(wp_unslash($_POST['mail_driver'])) : 'custom';
-            $global_settings['mailgun_api_key'] = isset($_POST['mailgun_api_key']) ? sanitize_text_field(wp_unslash($_POST['mailgun_api_key'])) : '';
-            $global_settings['mailgun_domain'] = isset($_POST['mailgun_domain']) ? sanitize_text_field(wp_unslash($_POST['mailgun_domain'])) : '';
-            $global_settings['mailgun_region'] = isset($_POST['mailgun_region']) ? sanitize_text_field(wp_unslash($_POST['mailgun_region'])) : 'us';
-            $global_settings['smtp_host'] = isset($_POST['smtp_host']) ? sanitize_text_field(wp_unslash($_POST['smtp_host'])) : '';
-            $global_settings['smtp_port'] = isset($_POST['smtp_port']) ? intval(wp_unslash($_POST['smtp_port'])) : 587;
-            $global_settings['smtp_username'] = isset($_POST['smtp_username']) ? sanitize_text_field(wp_unslash($_POST['smtp_username'])) : '';
-            $global_settings['smtp_password'] = isset($_POST['smtp_password']) ? sanitize_text_field(wp_unslash($_POST['smtp_password'])) : '';
-            $global_settings['smtp_security'] = isset($_POST['smtp_security']) ? sanitize_text_field(wp_unslash($_POST['smtp_security'])) : 'tls';
+            $global_settings['mail_driver'] = isset($_POST['mail_driver']) ? sanitize_text_field(wp_unslash($_POST['mail_driver'])) : 'sendgrid';
+            $driver_configs = [];
+            foreach (['sendgrid', 'mailpit', 'custom_smtp'] as $driver) {
+                $cfg = isset($_POST['driver_configs'][$driver]) ? $_POST['driver_configs'][$driver] : [];
+                $driver_configs[$driver] = [
+                    'smtp_host'     => sanitize_text_field(wp_unslash($cfg['smtp_host'] ?? '')),
+                    'smtp_port'     => intval($cfg['smtp_port'] ?? 587),
+                    'smtp_username' => sanitize_text_field(wp_unslash($cfg['smtp_username'] ?? '')),
+                    'smtp_password' => sanitize_text_field(wp_unslash($cfg['smtp_password'] ?? '')),
+                    'smtp_security' => sanitize_text_field(wp_unslash($cfg['smtp_security'] ?? 'tls')),
+                ];
+            }
+            $global_settings['driver_configs'] = $driver_configs;
 
             // Admin BCC fields (may be present on this form)
             $global_settings['admin_emails'] = isset($_POST['admin_emails']) ? sanitize_text_field(wp_unslash($_POST['admin_emails'])) : ($global_settings['admin_emails'] ?? '');

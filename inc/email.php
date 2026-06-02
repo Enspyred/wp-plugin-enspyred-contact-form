@@ -1185,7 +1185,7 @@ function email_send_confirmation_direct($customer_email, $customer_name, $formCo
     enspyred_log("🚀 email_send_confirmation_direct");
 
     $subject   = $formConfig['confirmation_email_subject'] ?? "We've Received Your Inquiry";
-    $body_text = $formConfig['confirmation_email_message'] ?? "Thank you for contacting us. Your message has been received and is currently being reviewed by our team.\n\nWe will follow up as soon as possible. If your request is urgent, please contact us directly by phone.\n\nThank you,\n\nThe Team";
+    $body_text = $formConfig['confirmation_email_message'] ?? "<p>Thank you for contacting us. </p> <p>Your message has been received and is currently being reviewed by our team.</p> <p>We will follow up as soon as possible. If your request is urgent, please contact us directly by phone.</p> <p> Thank you,<BR /> The Team </p>";
     $from_email = $formConfig['from'] ?? get_option('admin_email');
     $from_name  = $formConfig['fromName'] ?? get_option('blogname');
 

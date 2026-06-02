@@ -26,11 +26,6 @@ function ecf_handle_edit_form_submission($form_id) {
         return;
     }
 
-    // Merge UI-controlled email option fields into config
-    $decoded_config['reply_to_enabled'] = !empty($_POST['reply_to_enabled']);
-    $decoded_config['confirmation_email_enabled'] = !empty($_POST['confirmation_email_enabled']);
-    $decoded_config['confirmation_email_subject'] = isset($_POST['confirmation_email_subject']) ? sanitize_text_field(wp_unslash($_POST['confirmation_email_subject'])) : '';
-    $decoded_config['confirmation_email_message'] = isset($_POST['confirmation_email_message']) ? wp_kses_post(wp_unslash($_POST['confirmation_email_message'])) : '';
     $new_config = wp_json_encode($decoded_config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
     // Update form name and slug
@@ -75,12 +70,10 @@ function ecf_admin_edit_form_page($form_id) {
     // Prettify JSON for editing
     $config_json = json_encode(json_decode($config_raw, true), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
-    // Extract email option values for UI checkboxes
-    $config_data = json_decode($config_raw, true) ?: [];
-    $reply_to_enabled = $config_data['reply_to_enabled'] ?? true;
-    $confirmation_email_enabled = $config_data['confirmation_email_enabled'] ?? false;
-    $confirmation_email_subject = $config_data['confirmation_email_subject'] ?? "We've Received Your Inquiry";
-    $confirmation_email_message = $config_data['confirmation_email_message'] ?? "Thank you for contacting us. Your message has been received and is currently being reviewed by our team.\n\nWe will follow up as soon as possible. If your request is urgent, please contact us directly by phone.\n\nThank you,\n\nThe Team";
+    // Enqueue CodeMirror JSON editor (bundled with WordPress)
+    $editor_settings = wp_enqueue_code_editor(['type' => 'application/json']);
+    wp_enqueue_script('wp-theme-plugin-editor');
+    wp_enqueue_style('wp-codemirror');
 
     // Build parent config dropdown (exclude self and descendants, sort by name)
     $parent_id = isset($form['parent_id']) ? $form['parent_id'] : '';
@@ -180,57 +173,6 @@ function ecf_admin_edit_form_page($form_id) {
                     </td>
                 </tr>
                 <tr>
-                    <td colspan="2"><h2 style="margin: 20px 0 5px; padding-bottom: 8px; border-bottom: 1px solid #ccd0d4;">Email Options</h2></td>
-                </tr>
-                <tr>
-                    <th scope="row">Reply-To Header</th>
-                    <td>
-                        <input
-                            type="checkbox"
-                            id="reply_to_enabled"
-                            name="reply_to_enabled"
-                            value="1"
-                            <?php checked($reply_to_enabled); ?>
-                        />
-                        <label for="reply_to_enabled">Include sender in Reply-To header</label>
-                        <p class="description">When enabled, replies to notification emails go directly to the customer. Disable to prevent accidental replies — the sender's email still appears in the email body.</p>
-                    </td>
-                </tr>
-                <tr>
-                    <th scope="row">Confirmation Email</th>
-                    <td>
-                        <input
-                            type="checkbox"
-                            id="confirmation_email_enabled"
-                            name="confirmation_email_enabled"
-                            value="1"
-                            <?php checked($confirmation_email_enabled); ?>
-                            onchange="toggleConfirmationFields()"
-                        />
-                        <label for="confirmation_email_enabled">Send confirmation email to sender</label>
-                        <p class="description">Sends an acknowledgment email to the person who submitted the form. Replies to that email will go to the form's configured recipients.</p>
-                        <div id="confirmation-email-fields" style="margin-top: 15px; padding: 15px; background: #f9f9f9; border-radius: 4px; display: <?php echo $confirmation_email_enabled ? 'block' : 'none'; ?>;">
-                            <p style="margin: 0 0 10px;"><strong>Subject</strong></p>
-                            <input
-                                type="text"
-                                id="confirmation_email_subject"
-                                name="confirmation_email_subject"
-                                value="<?php echo esc_attr($confirmation_email_subject); ?>"
-                                class="large-text"
-                                style="margin-bottom: 12px;"
-                            />
-                            <p style="margin: 0 0 10px;"><strong>Message</strong></p>
-                            <textarea
-                                id="confirmation_email_message"
-                                name="confirmation_email_message"
-                                rows="5"
-                                class="large-text"
-                            ><?php echo esc_textarea($confirmation_email_message); ?></textarea>
-                            <p class="description" style="margin-top: 5px;">This message is sent to the customer. Basic HTML is supported.</p>
-                        </div>
-                    </td>
-                </tr>
-                <tr>
                     <td colspan="2"><h2 style="margin: 20px 0 5px; padding-bottom: 8px; border-bottom: 1px solid #ccd0d4;">JSON Configuration</h2></td>
                 </tr>
                 <tr>
@@ -273,21 +215,24 @@ function ecf_admin_edit_form_page($form_id) {
         </div>
 
         <script>
-        function toggleConfirmationFields() {
-            const enabled = document.getElementById('confirmation_email_enabled').checked;
-            document.getElementById('confirmation-email-fields').style.display = enabled ? 'block' : 'none';
-        }
-
         document.addEventListener('DOMContentLoaded', function() {
-            const textarea = document.getElementById('form_config');
-            const formatBtn = document.getElementById('format-json');
+            const textarea  = document.getElementById('form_config');
+            const formatBtn  = document.getElementById('format-json');
             const validateBtn = document.getElementById('validate-json');
             const statusSpan = document.getElementById('json-status');
-            const errorDiv = document.getElementById('json-error');
+            const errorDiv   = document.getElementById('json-error');
+
+            const editorSettings = <?php echo wp_json_encode($editor_settings); ?>;
+            const useCodeMirror  = editorSettings !== false && typeof wp !== 'undefined' && wp.codeEditor;
+
+            let cm = null;
+
+            function getValue() { return useCodeMirror ? cm.getValue() : textarea.value; }
+            function setValue(v) { useCodeMirror ? cm.setValue(v) : (textarea.value = v); }
 
             function validateJSON() {
                 try {
-                    const parsed = JSON.parse(textarea.value);
+                    const parsed = JSON.parse(getValue());
                     statusSpan.textContent = '✓ Valid JSON';
                     statusSpan.style.color = '#008a00';
                     errorDiv.style.display = 'none';
@@ -304,20 +249,28 @@ function ecf_admin_edit_form_page($form_id) {
             formatBtn.onclick = function() {
                 const parsed = validateJSON();
                 if (parsed) {
-                    textarea.value = JSON.stringify(parsed, null, 2);
+                    setValue(JSON.stringify(parsed, null, 2));
                     statusSpan.textContent = '✓ Formatted';
                 }
             };
 
             validateBtn.onclick = validateJSON;
 
-            // Auto-validate on change
-            textarea.addEventListener('input', function() {
-                clearTimeout(this.validateTimeout);
-                this.validateTimeout = setTimeout(validateJSON, 500);
-            });
+            if (useCodeMirror) {
+                const instance = wp.codeEditor.initialize(textarea, editorSettings);
+                cm = instance.codemirror;
+                cm.on('change', validateJSON);
+                // Sync CodeMirror value back to textarea before form submit
+                document.querySelector('form').addEventListener('submit', function() {
+                    textarea.value = cm.getValue();
+                });
+            } else {
+                textarea.addEventListener('input', function() {
+                    clearTimeout(this.validateTimeout);
+                    this.validateTimeout = setTimeout(validateJSON, 500);
+                });
+            }
 
-            // Initial validation
             validateJSON();
         });
         </script>

@@ -26,6 +26,8 @@ function ecf_handle_edit_form_submission($form_id) {
         return;
     }
 
+    $new_config = wp_json_encode($decoded_config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
     // Update form name and slug
     $old_name = $forms[$form_id]['name'];
     $forms[$form_id]['name'] = $new_name;
@@ -67,6 +69,11 @@ function ecf_admin_edit_form_page($form_id) {
     $config_raw = get_option('ecf_config_' . $form_id, '{}');
     // Prettify JSON for editing
     $config_json = json_encode(json_decode($config_raw, true), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+    // Enqueue CodeMirror JSON editor (bundled with WordPress)
+    $editor_settings = wp_enqueue_code_editor(['type' => 'application/json']);
+    wp_enqueue_script('wp-theme-plugin-editor');
+    wp_enqueue_style('wp-codemirror');
 
     // Build parent config dropdown (exclude self and descendants, sort by name)
     $parent_id = isset($form['parent_id']) ? $form['parent_id'] : '';
@@ -166,6 +173,9 @@ function ecf_admin_edit_form_page($form_id) {
                     </td>
                 </tr>
                 <tr>
+                    <td colspan="2"><h2 style="margin: 20px 0 5px; padding-bottom: 8px; border-bottom: 1px solid #ccd0d4;">JSON Configuration</h2></td>
+                </tr>
+                <tr>
                     <th scope="row">
                         <label for="form_config">Form Configuration</label>
                     </th>
@@ -206,15 +216,23 @@ function ecf_admin_edit_form_page($form_id) {
 
         <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const textarea = document.getElementById('form_config');
-            const formatBtn = document.getElementById('format-json');
+            const textarea  = document.getElementById('form_config');
+            const formatBtn  = document.getElementById('format-json');
             const validateBtn = document.getElementById('validate-json');
             const statusSpan = document.getElementById('json-status');
-            const errorDiv = document.getElementById('json-error');
+            const errorDiv   = document.getElementById('json-error');
+
+            const editorSettings = <?php echo wp_json_encode($editor_settings); ?>;
+            const useCodeMirror  = editorSettings !== false && typeof wp !== 'undefined' && wp.codeEditor;
+
+            let cm = null;
+
+            function getValue() { return useCodeMirror ? cm.getValue() : textarea.value; }
+            function setValue(v) { useCodeMirror ? cm.setValue(v) : (textarea.value = v); }
 
             function validateJSON() {
                 try {
-                    const parsed = JSON.parse(textarea.value);
+                    const parsed = JSON.parse(getValue());
                     statusSpan.textContent = '✓ Valid JSON';
                     statusSpan.style.color = '#008a00';
                     errorDiv.style.display = 'none';
@@ -231,20 +249,28 @@ function ecf_admin_edit_form_page($form_id) {
             formatBtn.onclick = function() {
                 const parsed = validateJSON();
                 if (parsed) {
-                    textarea.value = JSON.stringify(parsed, null, 2);
+                    setValue(JSON.stringify(parsed, null, 2));
                     statusSpan.textContent = '✓ Formatted';
                 }
             };
 
             validateBtn.onclick = validateJSON;
 
-            // Auto-validate on change
-            textarea.addEventListener('input', function() {
-                clearTimeout(this.validateTimeout);
-                this.validateTimeout = setTimeout(validateJSON, 500);
-            });
+            if (useCodeMirror) {
+                const instance = wp.codeEditor.initialize(textarea, editorSettings);
+                cm = instance.codemirror;
+                cm.on('change', validateJSON);
+                // Sync CodeMirror value back to textarea before form submit
+                document.querySelector('form').addEventListener('submit', function() {
+                    textarea.value = cm.getValue();
+                });
+            } else {
+                textarea.addEventListener('input', function() {
+                    clearTimeout(this.validateTimeout);
+                    this.validateTimeout = setTimeout(validateJSON, 500);
+                });
+            }
 
-            // Initial validation
             validateJSON();
         });
         </script>

@@ -22,7 +22,8 @@ function ecf_admin_contact_forms_router() {
     echo '<div style="margin-top: 30px;">';
     switch ($tab) {
         case 'settings':
-            ecf_admin_settings_page();
+            $stab = isset($_GET['stab']) ? sanitize_text_field(wp_unslash($_GET['stab'])) : 'mail';
+            ecf_admin_settings_page($stab);
             break;
         default:
             ecf_admin_contact_forms_page();
@@ -61,9 +62,7 @@ function ecf_handle_admin_form_submission() {
         case 'update_mail':
             $global_settings = get_option('ecf_global_settings', []);
 
-            $global_settings['mail_driver'] = isset($_POST['mail_driver']) ? sanitize_text_field(wp_unslash($_POST['mail_driver'])) : 'mailtrap';
-            $global_settings['mailtrap_username'] = isset($_POST['mailtrap_username']) ? sanitize_text_field(wp_unslash($_POST['mailtrap_username'])) : '';
-            $global_settings['mailtrap_password'] = isset($_POST['mailtrap_password']) ? sanitize_text_field(wp_unslash($_POST['mailtrap_password'])) : '';
+            $global_settings['mail_driver'] = isset($_POST['mail_driver']) ? sanitize_text_field(wp_unslash($_POST['mail_driver'])) : 'custom';
             $global_settings['mailgun_api_key'] = isset($_POST['mailgun_api_key']) ? sanitize_text_field(wp_unslash($_POST['mailgun_api_key'])) : '';
             $global_settings['mailgun_domain'] = isset($_POST['mailgun_domain']) ? sanitize_text_field(wp_unslash($_POST['mailgun_domain'])) : '';
             $global_settings['mailgun_region'] = isset($_POST['mailgun_region']) ? sanitize_text_field(wp_unslash($_POST['mailgun_region'])) : 'us';
@@ -104,5 +103,6 @@ function ecf_handle_admin_form_submission() {
                 add_settings_error('ecf_settings', 'form_deleted', 'Form deleted.', 'updated');
             }
             break;
+
     }
 }

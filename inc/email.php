@@ -453,7 +453,7 @@ function email_process($request, $reqFields, $formConfig, $is_multipart = false)
         if ($formConfig['confirmation_email_enabled'] ?? false) {
             $sender = email_extract_sender($apiElements);
             if (!empty($sender['email'])) {
-                email_send_confirmation_direct($sender['email'], $sender['name'], $formConfig);
+                email_send_confirmation_direct($sender['email'], $sender['name'], $formConfig, $apiElements, $request);
             } else {
                 enspyred_log("📧 Confirmation email skipped — no sender email found");
             }
@@ -1197,11 +1197,16 @@ function email_send($to, $subject, $message, $headers, $from_email = '', $from_n
 /*---------------------------
 | Email: Send Confirmation to Sender
 ---------------------------*/
-function email_send_confirmation_direct($customer_email, $customer_name, $formConfig) {
+function email_send_confirmation_direct($customer_email, $customer_name, $formConfig, $apiElements = [], $request = null) {
     enspyred_log("🚀 email_send_confirmation_direct");
 
     $subject   = $formConfig['confirmation_email_subject'] ?? "We've Received Your Inquiry";
     $body_text = $formConfig['confirmation_email_message'] ?? "<p>Thank you for contacting us. </p> <p>Your message has been received and is currently being reviewed by our team.</p> <p>We will follow up as soon as possible. If your request is urgent, please contact us directly by phone.</p> <p> Thank you,<BR /> The Team </p>";
+
+    // Allows a theme/site to customize the confirmation email body based on
+    // submitted field data (e.g. naming which branch will follow up).
+    // No-op unless hooked.
+    $body_text = apply_filters('ecf_confirmation_message', $body_text, $formConfig, $apiElements, $request);
     $from_email = $formConfig['from'] ?? get_option('admin_email');
     $from_name  = $formConfig['fromName'] ?? get_option('blogname');
 

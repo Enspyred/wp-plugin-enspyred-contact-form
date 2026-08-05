@@ -418,11 +418,16 @@ function email_process($request, $reqFields, $formConfig, $is_multipart = false)
         // Interpolate subject template with form field values
         $subject = sanitize_text_field(ecf_interpolate_template($subjectTemplate, $apiElements));
 
+        // Allows a theme/site to flag or rewrite the outgoing subject based on
+        // submitted field data (e.g. noting a submission couldn't be routed
+        // to a specific recipient). No-op unless hooked.
+        $subject = apply_filters('ecf_email_subject', $subject, $formConfig, $apiElements, $request);
+
         // Validate
         email_validate($subject, $token, $apiElements, $reqFields, $honeyPot);
 
         // Get To
-        $to = email_get_to($formConfig);
+        $to = email_get_to($formConfig, $apiElements, $request);
 
         // Get Reply to
         $headers = email_get_headers($apiElements, $formConfig);
@@ -455,7 +460,19 @@ function email_process($request, $reqFields, $formConfig, $is_multipart = false)
         }
 
         // respond
-        return new WP_REST_Response(['status' => 'success', 'message' => 'Your request has been sent, a representative will follow up with you shortly.'], 200);
+        //
+        // Allows a theme/site to customize the on-screen success message
+        // based on submission data (e.g. naming which branch will follow
+        // up). No-op unless hooked.
+        $successMessage = apply_filters(
+            'ecf_success_message',
+            'Your request has been sent, a representative will follow up with you shortly.',
+            $formConfig,
+            $apiElements,
+            $request,
+            $to
+        );
+        return new WP_REST_Response(['status' => 'success', 'message' => $successMessage], 200);
     } catch (ValidationException $e) {
         enspyred_log("⚠️ Validation error: " . $e->getMessage());
         return new WP_REST_Response([
@@ -610,9 +627,16 @@ function email_validate_api_elements($apiElements, $reqFields) {
 /*---------------------------
 | Email: Get To
 ---------------------------*/
-function email_get_to($formConfig) {
+function email_get_to($formConfig, $apiElements = [], $request = null) {
     $recipients = $formConfig['recipients'] ?? '';
     $to = array_map('trim', explode(',', $recipients));
+
+    // Allows a theme/site to dynamically override recipients based on submitted
+    // field data (e.g. routing by zip code to a regional inbox). No-op unless hooked.
+    $filtered = apply_filters('ecf_email_recipients', $to, $formConfig, $apiElements, $request);
+    $filtered = array_values(array_unique(array_filter(array_map('trim', (array) $filtered), 'is_email')));
+    $to = !empty($filtered) ? $filtered : $to;
+
     enspyred_log("📨 Recipients: " . implode(', ', $to));
     return $to;
 }
